@@ -15,7 +15,6 @@ class ItemVendaSerializer(serializers.ModelSerializer):
 
 class VendaSerializer(serializers.ModelSerializer):
     itens = ItemVendaSerializer(many=True)
-
     class Meta:
         model = Venda
         fields = [
@@ -28,17 +27,9 @@ class VendaSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         itens_data = validated_data.pop('itens')
-
-        # Usando a lógica que já tínhamos para pegar o vendedor logado (ou o admin como fallback)
-        vendedor = self.context.get('request').user if self.context.get('request') and self.context.get(
-            'request').user.is_authenticated else User.objects.filter(is_superuser=True).first()
-
+        vendedor = self.context['request'].user
         total_venda = sum(item['quantidade'] * item['preco_unitario'] for item in itens_data)
-
-        # Cria a Venda principal com todos os novos campos
         venda = Venda.objects.create(vendedor=vendedor, total=total_venda, **validated_data)
-
-        # Cria cada Item de Venda e dá baixa no estoque
         for item_data in itens_data:
             produto = Produto.objects.get(id=item_data['produto_id'])
             ItemVenda.objects.create(
@@ -47,16 +38,12 @@ class VendaSerializer(serializers.ModelSerializer):
                 quantidade=item_data['quantidade'],
                 preco_unitario=item_data['preco_unitario']
             )
-
             produto.estoque -= item_data['quantidade']
             produto.save()
-
         return venda
 
 class CaixaSerializer(serializers.ModelSerializer):
-    # Exibe o nome do responsável no retorno da API
     responsavel = serializers.CharField(source='responsavel.username', read_only=True)
-
     class Meta:
         model = Caixa
         fields = [
@@ -66,7 +53,23 @@ class CaixaSerializer(serializers.ModelSerializer):
         ]
 
 class CaixaAberturaSerializer(serializers.ModelSerializer):
+    responsavel = serializers.PrimaryKeyRelatedField(read_only=True)
     class Meta:
         model = Caixa
-        # Não inclua 'responsavel' no input; será preenchido na view.
-        fields = ['valor_abertura']
+        fields = ['id', 'valor_abertura', 'responsavel', 'data_abertura', 'status']
+        read_only_fields = ['responsavel', 'data_abertura', 'status', 'id']
+
+# --- PEÇAS QUE FALTAVAM ---
+class CaixaHistorySerializer(serializers.ModelSerializer):
+    responsavel_nome = serializers.CharField(source='responsavel.username', read_only=True)
+    class Meta:
+        model = Caixa
+        fields = [
+            'id', 'responsavel_nome', 'data_abertura', 'data_fechamento',
+            'valor_abertura', 'valor_fechamento_sistema',
+        ]
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'first_name', 'last_name', 'email']

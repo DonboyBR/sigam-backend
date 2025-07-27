@@ -2,12 +2,15 @@ from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
-from django.db.models import Sum, Count, DecimalField, IntegerField
+from django.db.models import Sum, Count, DecimalField, IntegerField, F, Case, When
 from django.db.models.functions import Coalesce
 from rest_framework.views import APIView
 from django.contrib.auth.models import User
 from .models import Produto, Venda, ItemVenda, Caixa
-from .serializers import ProdutoSerializer, VendaSerializer, CaixaSerializer, CaixaAberturaSerializer
+from .serializers import (
+    ProdutoSerializer, VendaSerializer, CaixaSerializer,
+    CaixaAberturaSerializer, CaixaHistorySerializer, UserSerializer
+)
 
 
 class ProdutoViewSet(viewsets.ModelViewSet):
@@ -20,7 +23,6 @@ class VendaViewSet(viewsets.ModelViewSet):
     queryset = Venda.objects.all()
     serializer_class = VendaSerializer
     permission_classes = [permissions.IsAuthenticated]
-
     def get_serializer_context(self):
         return {'request': self.request}
 
@@ -33,7 +35,6 @@ class CaixaViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='aberto')
     def get_caixa_aberto(self, request):
         try:
-            # Tenta encontrar um caixa aberto associado ao usuário logado
             caixa_aberto = Caixa.objects.get(responsavel=request.user, status='ABERTO')
             serializer = self.get_serializer(caixa_aberto)
             return Response(serializer.data)
@@ -57,17 +58,13 @@ class CaixaViewSet(viewsets.ModelViewSet):
         except Caixa.DoesNotExist:
             return Response({'detail': 'Nenhum caixa aberto para este usuário.'}, status=status.HTTP_404_NOT_FOUND)
 
+
     @action(detail=False, methods=['post'], url_path='abrir')
     def abrir_caixa(self, request):
         if Caixa.objects.filter(responsavel=request.user, status='ABERTO').exists():
             return Response({'detail': 'Você já possui um caixa aberto.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # ALTERAÇÃO: Remove a linha que sobrescreve request.data['responsavel']
-        # O serializer deve pegar o responsavel do request.user
-
         serializer = CaixaAberturaSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
-            # No serializer, garanta que o responsável seja atribuído como request.user
             serializer.save(responsavel=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -91,19 +88,20 @@ class CaixaViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(caixa).data)
 
     @action(detail=False, methods=['get'], url_path='historico')
-    def get_history(self, request):
+    def history(self, request):
         queryset = Caixa.objects.filter(status='FECHADO').order_by('-data_fechamento')
-        serializer = self.get_serializer(queryset, many=True)
+        serializer = CaixaHistorySerializer(queryset, many=True)
         return Response(serializer.data)
 
     @action(detail=True, methods=['get'], url_path='details')
-    def get_details(self, request, pk=None):
+    def details(self, request, pk=None):
         try:
             caixa = self.get_object()
             if not caixa.data_fechamento:
                 caixa.data_fechamento = timezone.now()
 
             vendas_no_periodo = Venda.objects.filter(
+                caixa=caixa,
                 data_venda__gte=caixa.data_abertura,
                 data_venda__lte=caixa.data_fechamento
             )
@@ -114,7 +112,7 @@ class CaixaViewSet(viewsets.ModelViewSet):
                 'produto__nome', 'quantidade', 'preco_unitario', 'venda__metodo_pagamento'
             ).order_by('-venda__data_venda')
             details = {
-                'caixa': self.get_serializer(caixa).data,
+                'caixa': CaixaHistorySerializer(caixa).data,
                 'totais_venda': list(totais_venda),
                 'itens_vendidos': list(itens_vendidos)
             }
@@ -125,7 +123,6 @@ class CaixaViewSet(viewsets.ModelViewSet):
 
 class DashboardAdminAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-
     def get(self, request, *args, **kwargs):
         data_str = request.query_params.get('data')
         vendedor_id = request.query_params.get('vendedor_id')
@@ -143,15 +140,11 @@ class DashboardAdminAPIView(APIView):
             vendas_do_dia = vendas_do_dia.filter(vendedor_id=vendedor_id)
             itens_do_dia = itens_do_dia.filter(venda__vendedor_id=vendedor_id)
 
-        total_geral_vendido = vendas_do_dia.aggregate(total=Coalesce(Sum('total'), 0, output_field=DecimalField()))[
-            'total']
-        total_produtos_vendidos = \
-        itens_do_dia.aggregate(total=Coalesce(Sum('quantidade'), 0, output_field=IntegerField()))['total']
+        total_geral_vendido = vendas_do_dia.aggregate(total=Coalesce(Sum('total'), 0, output_field=DecimalField()))['total']
+        total_produtos_vendidos = itens_do_dia.aggregate(total=Coalesce(Sum('quantidade'), 0, output_field=IntegerField()))['total']
 
-        ranking_produtos = ItemVenda.objects.values('produto__nome').annotate(total_vendido=Sum('quantidade')).order_by(
-            '-total_vendido')[:5]
-        ranking_vendedores = Venda.objects.values('vendedor__username').annotate(
-            valor_total_vendido=Sum('total')).order_by('-valor_total_vendido')[:3]
+        ranking_produtos = ItemVenda.objects.values('produto__nome').annotate(total_vendido=Sum('quantidade')).order_by('-total_vendido')[:5]
+        ranking_vendedores = Venda.objects.values('vendedor__username').annotate(valor_total_vendido=Sum('total')).order_by('-valor_total_vendido')[:3]
         vendedores = User.objects.filter(is_staff=True).values('id', 'username')
 
         data = {
@@ -166,7 +159,6 @@ class DashboardAdminAPIView(APIView):
 
 class DashboardFuncionarioAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-
     def get(self, request, *args, **kwargs):
         funcionario = request.user
         total_vendido_turno = 0
@@ -174,15 +166,15 @@ class DashboardFuncionarioAPIView(APIView):
         try:
             caixa_aberto = Caixa.objects.get(responsavel=funcionario, status='ABERTO')
             vendas_no_periodo = Venda.objects.filter(vendedor=funcionario, data_venda__gte=caixa_aberto.data_abertura)
-            total_vendido_turno = \
-            vendas_no_periodo.aggregate(total=Coalesce(Sum('total'), 0, output_field=DecimalField()))['total']
-            produtos_vendidos_turno = \
-            vendas_no_periodo.aggregate(total=Coalesce(Sum('itens__quantidade'), 0, output_field=IntegerField()))[
-                'total']
+            total_vendido_turno = vendas_no_periodo.aggregate(total=Coalesce(Sum('total'), 0, output_field=DecimalField()))['total']
+            produtos_vendidos_turno = vendas_no_periodo.aggregate(total=Coalesce(Sum('itens__quantidade'), 0, output_field=IntegerField()))['total']
         except Caixa.DoesNotExist:
             pass
-        data = {
-            'totalVendidoTurno': total_vendido_turno,
-            'produtosVendidosTurno': produtos_vendidos_turno,
-        }
+        data = { 'totalVendidoTurno': total_vendido_turno, 'produtosVendidosTurno': produtos_vendidos_turno, }
         return Response(data)
+
+class CurrentUserView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    def get(self, request):
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data)
