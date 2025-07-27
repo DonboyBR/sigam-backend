@@ -1,4 +1,3 @@
-# api/models.py - VERSÃO FINAL E CORRETA
 from django.db import models
 from django.contrib.auth.models import User
 

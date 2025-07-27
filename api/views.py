@@ -1,4 +1,3 @@
-# api/views.py
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -63,11 +62,13 @@ class CaixaViewSet(viewsets.ModelViewSet):
         if Caixa.objects.filter(responsavel=request.user, status='ABERTO').exists():
             return Response({'detail': 'Você já possui um caixa aberto.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Adiciona o usuário logado aos dados para salvar
-        request.data['responsavel'] = request.user.id
+        # ALTERAÇÃO: Remove a linha que sobrescreve request.data['responsavel']
+        # O serializer deve pegar o responsavel do request.user
+
         serializer = CaixaAberturaSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
-            serializer.save()
+            # No serializer, garanta que o responsável seja atribuído como request.user
+            serializer.save(responsavel=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

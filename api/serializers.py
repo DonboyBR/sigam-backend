@@ -1,4 +1,3 @@
-# api/serializers.py - VERSÃO COM INDENTAÇÃO CORRIGIDA
 from rest_framework import serializers
 from .models import Produto, Venda, ItemVenda, Caixa
 from django.contrib.auth.models import User
@@ -55,9 +54,11 @@ class VendaSerializer(serializers.ModelSerializer):
         return venda
 
 class CaixaSerializer(serializers.ModelSerializer):
+    # Exibe o nome do responsável no retorno da API
+    responsavel = serializers.CharField(source='responsavel.username', read_only=True)
+
     class Meta:
         model = Caixa
-
         fields = [
             'id', 'responsavel', 'data_abertura', 'data_fechamento',
             'valor_abertura', 'valor_fechamento_apurado', 'status',
@@ -67,4 +68,5 @@ class CaixaSerializer(serializers.ModelSerializer):
 class CaixaAberturaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Caixa
-        fields = ['responsavel', 'valor_abertura']
+        # Não inclua 'responsavel' no input; será preenchido na view.
+        fields = ['valor_abertura']
