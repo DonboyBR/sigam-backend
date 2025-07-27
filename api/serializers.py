@@ -57,8 +57,7 @@ class VendaSerializer(serializers.ModelSerializer):
 class CaixaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Caixa
-        # --- AJUSTE AQUI ---
-        # Adicionamos os novos campos de valores apurados
+
         fields = [
             'id', 'responsavel', 'data_abertura', 'data_fechamento',
             'valor_abertura', 'valor_fechamento_apurado', 'status',

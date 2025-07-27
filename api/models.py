@@ -1,4 +1,4 @@
-# api/models.py
+# api/models.py - VERSÃO FINAL E CORRETA
 from django.db import models
 from django.contrib.auth.models import User
 
@@ -20,7 +20,7 @@ class Venda(models.Model):
         ('ELO', 'Elo'),
         ('VISA', 'Visa'),
         ('MASTERCARD', 'Mastercard'),
-        ('AMEX', 'Amex'), # Corrigido para Amex
+        ('AMEX', 'Amex'),
         ('OUTRO', 'Outro'),
     ]
 
@@ -32,11 +32,11 @@ class Venda(models.Model):
     bandeira_cartao = models.CharField(max_length=20, choices=BANDEIRA_CARTAO_CHOICES, null=True, blank=True)
     nsu = models.CharField(max_length=100, null=True, blank=True)
     codigo_autorizacao = models.CharField(max_length=100, null=True, blank=True)
-    foto_notinha = models.TextField(null=True, blank=True)  # Campo para a foto da notinha (Base64)
+    foto_notinha = models.TextField(null=True, blank=True)
     observacoes = models.TextField(null=True, blank=True)
 
-def __str__(self):
-    return f"Venda #{self.id}"
+    def __str__(self):
+        return f"Venda #{self.id}"
 
 class ItemVenda(models.Model):
     venda = models.ForeignKey(Venda, on_delete=models.CASCADE, related_name='itens')
@@ -45,22 +45,20 @@ class ItemVenda(models.Model):
     preco_unitario = models.DecimalField(max_digits=10, decimal_places=2)
     def __str__(self): return f"{self.quantidade}x {self.produto.nome}"
 
-# Altere APENAS a classe Caixa em api/models.py
-
 class Caixa(models.Model):
     STATUS_CHOICES = [('ABERTO', 'Aberto'), ('FECHADO', 'Fechado')]
-    responsavel = models.CharField(max_length=100)
+    responsavel = models.ForeignKey(User, on_delete=models.PROTECT, related_name='caixas_operados')
     data_abertura = models.DateTimeField(auto_now_add=True)
     data_fechamento = models.DateTimeField(null=True, blank=True)
     valor_abertura = models.DecimalField(max_digits=10, decimal_places=2)
 
-    # --- ADIÇÃO DOS NOVOS CAMPOS PARA O FECHAMENTO ---
     dinheiro_apurado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     credito_apurado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     debito_apurado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     pix_apurado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-
     valor_fechamento_apurado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='ABERTO')
 
-    def __str__(self): return f"Caixa de {self.responsavel} - {self.data_abertura.strftime('%d/%m/%Y')}"
+    def __str__(self):
+        return f"Caixa de {self.responsavel.username} - {self.data_abertura.strftime('%d/%m/%Y')}"
