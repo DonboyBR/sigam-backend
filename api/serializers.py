@@ -4,12 +4,13 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
+
 class ProdutoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Produto
         fields = '__all__'
 
-# --- SERIALIZER DE ITEMVENDA UNIFICADO E CORRIGIDO ---
+
 class ItemVendaSerializer(serializers.ModelSerializer):
     produto_nome = serializers.CharField(source='produto.nome', read_only=True)
     produto_id = serializers.IntegerField(write_only=True)
@@ -20,7 +21,6 @@ class ItemVendaSerializer(serializers.ModelSerializer):
 
 
 class VendaSerializer(serializers.ModelSerializer):
-    # Usando o serializer unificado para ler e escrever
     itens = ItemVendaSerializer(many=True)
 
     class Meta:
@@ -34,7 +34,6 @@ class VendaSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'vendedor', 'data_venda', 'total', 'caixa']
 
     def create(self, validated_data):
-        # A lógica de criação volta a ler o campo 'itens'
         itens_data = validated_data.pop('itens')
         vendedor = self.context['request'].user
         try:
@@ -56,31 +55,47 @@ class VendaSerializer(serializers.ModelSerializer):
             produto.save()
         return venda
 
+
 class CaixaSerializer(serializers.ModelSerializer):
     responsavel = serializers.CharField(source='responsavel.username', read_only=True)
+
     class Meta:
         model = Caixa
         fields = '__all__'
 
+
 class CaixaAberturaSerializer(serializers.ModelSerializer):
     responsavel = serializers.PrimaryKeyRelatedField(read_only=True)
+
     class Meta:
         model = Caixa
         fields = ['id', 'valor_abertura', 'responsavel', 'data_abertura', 'status']
         read_only_fields = ['responsavel', 'data_abertura', 'status', 'id']
 
+
 class CaixaHistorySerializer(serializers.ModelSerializer):
     responsavel_nome = serializers.CharField(source='responsavel.username', read_only=True)
+
     class Meta:
         model = Caixa
-        fields = ['id', 'responsavel_nome', 'data_abertura', 'data_fechamento', 'valor_abertura', 'valor_fechamento_apurado']
+        fields = [
+            'id', 'responsavel_nome', 'data_abertura', 'data_fechamento',
+            'valor_abertura', 'valor_fechamento_apurado', 'anexo_filipeta'
+        ]
+
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'first_name', 'last_name', 'email', 'is_staff']
 
+
 class CaixaUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Caixa
-        fields = ['dinheiro_apurado', 'credito_apurado', 'debito_apurado', 'pix_apurado', 'valor_fechamento_apurado']
+        fields = [
+            'dinheiro_apurado', 'credito_apurado', 'debito_apurado', 'pix_apurado',
+            'valor_fechamento_apurado',
+            'dinheiro_sistema_ajustado', 'credito_sistema_ajustado',
+            'debito_sistema_ajustado', 'pix_sistema_ajustado'
+        ]

@@ -12,7 +12,6 @@ class Produto(models.Model):
     def __str__(self): return self.nome
 
 
-# --- CLASSE CAIXA MOVIDA PARA CIMA ---
 class Caixa(models.Model):
     STATUS_CHOICES = [('ABERTO', 'Aberto'), ('FECHADO', 'Fechado')]
     responsavel = models.ForeignKey(User, on_delete=models.PROTECT, related_name='caixas_operados')
@@ -25,14 +24,22 @@ class Caixa(models.Model):
     debito_apurado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     pix_apurado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     valor_fechamento_apurado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+
     valor_fechamento_sistema = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+
+    dinheiro_sistema_ajustado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    credito_sistema_ajustado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    debito_sistema_ajustado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    pix_sistema_ajustado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='ABERTO')
+
+    anexo_filipeta = models.ImageField(upload_to='filipetas/', blank=True, null=True)
 
     def __str__(self):
         return f"Caixa de {self.responsavel.username} - {self.data_abertura.strftime('%d/%m/%Y')}"
 
 
-# --- CLASSE VENDA AGORA VEM DEPOIS E CONSEGUE "ENXERGAR" A CLASSE CAIXA ---
 class Venda(models.Model):
     METODO_PAGAMENTO_CHOICES = [
         ('Dinheiro', 'Dinheiro'),
@@ -47,7 +54,6 @@ class Venda(models.Model):
         ('OUTRO', 'Outro'),
     ]
 
-    # Esta linha agora funciona, pois Caixa já foi definido acima
     caixa = models.ForeignKey(Caixa, on_delete=models.SET_NULL, null=True, blank=True, related_name='vendas')
     vendedor = models.ForeignKey(User, on_delete=models.PROTECT, null=True)
     data_venda = models.DateTimeField(auto_now_add=True)
