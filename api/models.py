@@ -25,7 +25,7 @@ class Caixa(models.Model):
     debito_apurado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     pix_apurado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     valor_fechamento_apurado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-
+    valor_fechamento_sistema = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='ABERTO')
 
     def __str__(self):
