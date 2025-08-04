@@ -33,7 +33,6 @@ class Caixa(models.Model):
     pix_sistema_ajustado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='ABERTO')
-
     anexo_filipeta = models.ImageField(upload_to='filipetas/', blank=True, null=True)
 
     def __str__(self):
@@ -41,18 +40,10 @@ class Caixa(models.Model):
 
 
 class Venda(models.Model):
-    METODO_PAGAMENTO_CHOICES = [
-        ('Dinheiro', 'Dinheiro'),
-        ('PIX', 'PIX'),
-        ('Cartao', 'Cartão'),
-    ]
-    BANDEIRA_CARTAO_CHOICES = [
-        ('ELO', 'Elo'),
-        ('VISA', 'Visa'),
-        ('MASTERCARD', 'Mastercard'),
-        ('AMEX', 'Amex'),
-        ('OUTRO', 'Outro'),
-    ]
+    METODO_PAGAMENTO_CHOICES = [('Dinheiro', 'Dinheiro'), ('PIX', 'PIX'), ('Cartao', 'Cartão'), ]
+    TIPO_CARTAO_CHOICES = [('Debito', 'Débito'), ('Credito', 'Crédito'), ]
+    BANDEIRA_CARTAO_CHOICES = [('ELO', 'Elo'), ('VISA', 'Visa'), ('MASTERCARD', 'Mastercard'), ('AMEX', 'Amex'),
+                               ('OUTRO', 'Outro'), ]
 
     caixa = models.ForeignKey(Caixa, on_delete=models.SET_NULL, null=True, blank=True, related_name='vendas')
     vendedor = models.ForeignKey(User, on_delete=models.PROTECT, null=True)
@@ -60,10 +51,11 @@ class Venda(models.Model):
     total = models.DecimalField(max_digits=10, decimal_places=2)
 
     metodo_pagamento = models.CharField(max_length=20, choices=METODO_PAGAMENTO_CHOICES)
+    tipo_cartao = models.CharField(max_length=10, choices=TIPO_CARTAO_CHOICES, null=True, blank=True)
     bandeira_cartao = models.CharField(max_length=20, choices=BANDEIRA_CARTAO_CHOICES, null=True, blank=True)
     nsu = models.CharField(max_length=100, null=True, blank=True)
     codigo_autorizacao = models.CharField(max_length=100, null=True, blank=True)
-    foto_notinha = models.TextField(null=True, blank=True)
+    foto_notinha = models.ImageField(upload_to='notinhas/', blank=True, null=True)
     observacoes = models.TextField(null=True, blank=True)
 
     def __str__(self):

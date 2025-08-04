@@ -4,30 +4,27 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
-
 class ProdutoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Produto
         fields = '__all__'
 
-
 class ItemVendaSerializer(serializers.ModelSerializer):
     produto_nome = serializers.CharField(source='produto.nome', read_only=True)
     produto_id = serializers.IntegerField(write_only=True)
-
     class Meta:
         model = ItemVenda
         fields = ['produto_id', 'produto_nome', 'quantidade', 'preco_unitario']
 
-
 class VendaSerializer(serializers.ModelSerializer):
     itens = ItemVendaSerializer(many=True)
+    foto_notinha = serializers.ImageField(read_only=True)
 
     class Meta:
         model = Venda
         fields = [
             'id', 'caixa', 'vendedor', 'data_venda', 'total',
-            'metodo_pagamento', 'bandeira_cartao', 'nsu',
+            'metodo_pagamento', 'tipo_cartao', 'bandeira_cartao', 'nsu', # <-- CAMPO NOVO AQUI
             'codigo_autorizacao', 'foto_notinha', 'observacoes',
             'itens'
         ]
@@ -40,55 +37,39 @@ class VendaSerializer(serializers.ModelSerializer):
             caixa_aberto = Caixa.objects.get(responsavel=vendedor, status='ABERTO')
         except Caixa.DoesNotExist:
             raise serializers.ValidationError("Não há caixa aberto para este usuário.")
-
         total_venda = sum(item['quantidade'] * item['preco_unitario'] for item in itens_data)
-        venda = Venda.objects.create(
-            vendedor=vendedor, caixa=caixa_aberto, total=total_venda, **validated_data
-        )
+        venda = Venda.objects.create(vendedor=vendedor, caixa=caixa_aberto, total=total_venda, **validated_data)
         for item_data in itens_data:
             produto = Produto.objects.get(id=item_data['produto_id'])
-            ItemVenda.objects.create(
-                venda=venda, produto=produto,
-                quantidade=item_data['quantidade'], preco_unitario=item_data['preco_unitario']
-            )
+            ItemVenda.objects.create(venda=venda, produto=produto, quantidade=item_data['quantidade'], preco_unitario=item_data['preco_unitario'])
             produto.estoque -= item_data['quantidade']
             produto.save()
         return venda
 
-
 class CaixaSerializer(serializers.ModelSerializer):
     responsavel = serializers.CharField(source='responsavel.username', read_only=True)
-
     class Meta:
         model = Caixa
         fields = '__all__'
 
-
 class CaixaAberturaSerializer(serializers.ModelSerializer):
     responsavel = serializers.PrimaryKeyRelatedField(read_only=True)
-
     class Meta:
         model = Caixa
         fields = ['id', 'valor_abertura', 'responsavel', 'data_abertura', 'status']
         read_only_fields = ['responsavel', 'data_abertura', 'status', 'id']
 
-
 class CaixaHistorySerializer(serializers.ModelSerializer):
     responsavel_nome = serializers.CharField(source='responsavel.username', read_only=True)
-
+    anexo_filipeta = serializers.ImageField(read_only=True)
     class Meta:
         model = Caixa
-        fields = [
-            'id', 'responsavel_nome', 'data_abertura', 'data_fechamento',
-            'valor_abertura', 'valor_fechamento_apurado', 'anexo_filipeta'
-        ]
-
+        fields = ['id', 'responsavel_nome', 'data_abertura', 'data_fechamento', 'valor_abertura', 'valor_fechamento_apurado', 'anexo_filipeta']
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'first_name', 'last_name', 'email', 'is_staff']
-
 
 class CaixaUpdateSerializer(serializers.ModelSerializer):
     class Meta:
