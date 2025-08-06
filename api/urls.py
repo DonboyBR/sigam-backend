@@ -1,3 +1,4 @@
+# api/urls.py
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
@@ -6,7 +7,8 @@ from .views import (
     CaixaViewSet,
     CurrentUserView,
     DashboardAdminAPIView,
-    DashboardFuncionarioAPIView
+    DashboardFuncionarioAPIView,
+    ConfiguracoesView
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -21,6 +23,7 @@ router.register(r'caixas', CaixaViewSet, basename='caixa')
 urlpatterns = [
     path('', include(router.urls)),
     path('users/me/', CurrentUserView.as_view(), name='current-user'),
+    path('configuracoes/', ConfiguracoesView.as_view(), name='configuracoes'),
     path('dashboard/admin/', DashboardAdminAPIView.as_view(), name='dashboard-admin'),
     path('dashboard/funcionario/', DashboardFuncionarioAPIView.as_view(), name='dashboard-funcionario'),
 

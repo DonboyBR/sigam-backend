@@ -6,14 +6,15 @@ from django.db.models import Sum, DecimalField, IntegerField, Q
 from django.db.models.functions import Coalesce, TruncDay
 from rest_framework.views import APIView
 from django.contrib.auth import get_user_model
-from .models import Produto, Venda, ItemVenda, Caixa
+from .models import Produto, Venda, ItemVenda, Caixa, Configuracoes
 from .serializers import (
     ProdutoSerializer, VendaSerializer, CaixaSerializer,
     CaixaAberturaSerializer, CaixaHistorySerializer, UserSerializer,
-    CaixaUpdateSerializer
+    CaixaUpdateSerializer, ConfiguracoesSerializer
 )
 import json
 from datetime import date, timedelta
+from django.db import transaction
 
 User = get_user_model()
 
@@ -39,6 +40,7 @@ class VendaViewSet(viewsets.ModelViewSet):
     queryset = Venda.objects.all()
     serializer_class = VendaSerializer
     permission_classes = [permissions.IsAuthenticated]
+
     def get_serializer_context(self):
         return {'request': self.request}
 
@@ -48,30 +50,49 @@ class VendaViewSet(viewsets.ModelViewSet):
             caixa_aberto = Caixa.objects.get(responsavel=vendedor, status='ABERTO')
         except Caixa.DoesNotExist:
             return Response({"detail": "Não há caixa aberto para este usuário."}, status=status.HTTP_400_BAD_REQUEST)
+
         itens_data = json.loads(request.data.get('itens', '[]'))
         if not itens_data:
             return Response({"detail": "A venda precisa ter pelo menos um item."}, status=status.HTTP_400_BAD_REQUEST)
-        total_venda = sum(float(item['preco_unitario']) * int(item['quantidade']) for item in itens_data)
-        venda_data = {
-            'vendedor': vendedor, 'caixa': caixa_aberto, 'total': total_venda,
-            'metodo_pagamento': request.data.get('metodo_pagamento'),
-            'tipo_cartao': request.data.get('tipo_cartao'),
-            'bandeira_cartao': request.data.get('bandeira_cartao'), 'nsu': request.data.get('nsu'),
-            'codigo_autorizacao': request.data.get('codigo_autorizacao'),
-            'observacoes': request.data.get('observacoes'),
-            'foto_notinha': request.FILES.get('foto_notinha')
-        }
-        venda_data_clean = {k: v for k, v in venda_data.items() if v is not None and v != ''}
-        venda = Venda.objects.create(**venda_data_clean)
-        for item_data in itens_data:
-            try:
-                produto = Produto.objects.get(id=item_data['produto_id'])
-                ItemVenda.objects.create(venda=venda, produto=produto, quantidade=item_data['quantidade'], preco_unitario=item_data['preco_unitario'])
-                produto.estoque -= item_data['quantidade']
-                produto.save()
-            except Produto.DoesNotExist:
-                venda.delete()
-                return Response({"detail": f"Produto com ID {item_data['produto_id']} não encontrado."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                for item_data in itens_data:
+                    produto = Produto.objects.get(id=item_data['produto_id'])
+                    if produto.estoque < item_data['quantidade']:
+                        return Response(
+                            {
+                                "detail": f"Estoque insuficiente para '{produto.nome}'. Apenas {produto.estoque} unidades disponíveis."},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                total_venda = sum(float(item['preco_unitario']) * int(item['quantidade']) for item in itens_data)
+                venda_data = {
+                    'vendedor': vendedor, 'caixa': caixa_aberto, 'total': total_venda,
+                    'metodo_pagamento': request.data.get('metodo_pagamento'),
+                    'tipo_cartao': request.data.get('tipo_cartao'),
+                    'bandeira_cartao': request.data.get('bandeira_cartao'), 'nsu': request.data.get('nsu'),
+                    'codigo_autorizacao': request.data.get('codigo_autorizacao'),
+                    'observacoes': request.data.get('observacoes'),
+                    'foto_notinha': request.FILES.get('foto_notinha')
+                }
+                venda_data_clean = {k: v for k, v in venda_data.items() if v is not None and v != ''}
+                venda = Venda.objects.create(**venda_data_clean)
+
+                for item_data in itens_data:
+                    produto = Produto.objects.get(id=item_data['produto_id'])
+                    ItemVenda.objects.create(venda=venda, produto=produto, quantidade=item_data['quantidade'],
+                                             preco_unitario=item_data['preco_unitario'])
+                    produto.estoque -= item_data['quantidade']
+                    produto.save()
+
+        except Produto.DoesNotExist:
+            return Response({"detail": "Um dos produtos no carrinho não foi encontrado."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"detail": f"Ocorreu um erro interno inesperado: {str(e)}"},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         serializer = self.get_serializer(venda)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -96,12 +117,16 @@ class CaixaViewSet(viewsets.ModelViewSet):
             caixa_aberto = Caixa.objects.get(responsavel=request.user, status='ABERTO')
             vendas_no_periodo = Venda.objects.filter(data_venda__gte=caixa_aberto.data_abertura, vendedor=request.user)
             totais = vendas_no_periodo.aggregate(
-                dinheiro=Coalesce(Sum('total', filter=Q(metodo_pagamento='Dinheiro')), 0.0, output_field=DecimalField()),
+                dinheiro=Coalesce(Sum('total', filter=Q(metodo_pagamento='Dinheiro')), 0.0,
+                                  output_field=DecimalField()),
                 pix=Coalesce(Sum('total', filter=Q(metodo_pagamento='PIX')), 0.0, output_field=DecimalField()),
-                credito=Coalesce(Sum('total', filter=Q(metodo_pagamento='Cartao', tipo_cartao='Credito')), 0.0, output_field=DecimalField()),
-                debito=Coalesce(Sum('total', filter=Q(metodo_pagamento='Cartao', tipo_cartao='Debito')), 0.0, output_field=DecimalField())
+                credito=Coalesce(Sum('total', filter=Q(metodo_pagamento='Cartao', tipo_cartao='Credito')), 0.0,
+                                 output_field=DecimalField()),
+                debito=Coalesce(Sum('total', filter=Q(metodo_pagamento='Cartao', tipo_cartao='Debito')), 0.0,
+                                output_field=DecimalField())
             )
-            totais['total'] = (totais.get('dinheiro', 0) or 0) + (totais.get('credito', 0) or 0) + (totais.get('debito', 0) or 0) + (totais.get('pix', 0) or 0)
+            totais['total'] = (totais.get('dinheiro', 0) or 0) + (totais.get('credito', 0) or 0) + (
+                        totais.get('debito', 0) or 0) + (totais.get('pix', 0) or 0)
             return Response(totais)
         except Caixa.DoesNotExist:
             return Response({'detail': 'Nenhum caixa aberto para este usuário.'}, status=status.HTTP_404_NOT_FOUND)
@@ -164,24 +189,33 @@ class CaixaViewSet(viewsets.ModelViewSet):
                 return Response({'detail': 'Acesso negado.'}, status=status.HTTP_403_FORBIDDEN)
             vendas_do_caixa = caixa.vendas.all()
             sigam_totals_calculated = vendas_do_caixa.aggregate(
-                dinheiro=Coalesce(Sum('total', filter=Q(metodo_pagamento='Dinheiro')), 0.0, output_field=DecimalField()),
+                dinheiro=Coalesce(Sum('total', filter=Q(metodo_pagamento='Dinheiro')), 0.0,
+                                  output_field=DecimalField()),
                 pix=Coalesce(Sum('total', filter=Q(metodo_pagamento='PIX')), 0.0, output_field=DecimalField()),
-                credito=Coalesce(Sum('total', filter=Q(metodo_pagamento='Cartao', tipo_cartao='Credito')), 0.0, output_field=DecimalField()),
-                debito=Coalesce(Sum('total', filter=Q(metodo_pagamento='Cartao', tipo_cartao='Debito')), 0.0, output_field=DecimalField())
+                credito=Coalesce(Sum('total', filter=Q(metodo_pagamento='Cartao', tipo_cartao='Credito')), 0.0,
+                                 output_field=DecimalField()),
+                debito=Coalesce(Sum('total', filter=Q(metodo_pagamento='Cartao', tipo_cartao='Debito')), 0.0,
+                                output_field=DecimalField())
             )
-            dinheiro_final = caixa.dinheiro_sistema_ajustado if caixa.dinheiro_sistema_ajustado is not None else sigam_totals_calculated.get('dinheiro', 0)
-            credito_final = caixa.credito_sistema_ajustado if caixa.credito_sistema_ajustado is not None else sigam_totals_calculated.get('credito', 0)
-            debito_final = caixa.debito_sistema_ajustado if caixa.debito_sistema_ajustado is not None else sigam_totals_calculated.get('debito', 0)
-            pix_final = caixa.pix_sistema_ajustado if caixa.pix_sistema_ajustado is not None else sigam_totals_calculated.get('pix', 0)
+            dinheiro_final = caixa.dinheiro_sistema_ajustado if caixa.dinheiro_sistema_ajustado is not None else sigam_totals_calculated.get(
+                'dinheiro', 0)
+            credito_final = caixa.credito_sistema_ajustado if caixa.credito_sistema_ajustado is not None else sigam_totals_calculated.get(
+                'credito', 0)
+            debito_final = caixa.debito_sistema_ajustado if caixa.debito_sistema_ajustado is not None else sigam_totals_calculated.get(
+                'debito', 0)
+            pix_final = caixa.pix_sistema_ajustado if caixa.pix_sistema_ajustado is not None else sigam_totals_calculated.get(
+                'pix', 0)
             total_final = (dinheiro_final or 0) + (credito_final or 0) + (debito_final or 0) + (pix_final or 0)
-            sigam_totals = {'dinheiro': dinheiro_final, 'credito': credito_final, 'debito': debito_final, 'pix': pix_final, 'total': total_final}
+            sigam_totals = {'dinheiro': dinheiro_final, 'credito': credito_final, 'debito': debito_final,
+                            'pix': pix_final, 'total': total_final}
             vendas_serializer = VendaSerializer(vendas_do_caixa, many=True, context={'request': request})
             anexo_url = request.build_absolute_uri(caixa.anexo_filipeta.url) if caixa.anexo_filipeta else None
             response_data = {
                 'id': caixa.id, 'responsavel_nome': caixa.responsavel.username,
                 'data_abertura': caixa.data_abertura, 'data_fechamento': caixa.data_fechamento,
                 'valor_abertura': caixa.valor_abertura, 'anexo_filipeta': anexo_url,
-                'apurado_fechamento': {'dinheiro': caixa.dinheiro_apurado, 'credito': caixa.credito_apurado, 'debito': caixa.debito_apurado, 'pix': caixa.pix_apurado,},
+                'apurado_fechamento': {'dinheiro': caixa.dinheiro_apurado, 'credito': caixa.credito_apurado,
+                                       'debito': caixa.debito_apurado, 'pix': caixa.pix_apurado, },
                 'calculado_sigam': sigam_totals, 'vendas': vendas_serializer.data
             }
             return Response(response_data)
@@ -200,6 +234,7 @@ class CaixaViewSet(viewsets.ModelViewSet):
 
 class DashboardAdminAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+
     def get(self, request, *args, **kwargs):
         vendedor_id_str = request.query_params.get('vendedor_id')
         today = date.today()
@@ -207,14 +242,17 @@ class DashboardAdminAPIView(APIView):
         vendas_filtradas_para_totais = vendas_do_mes
         if vendedor_id_str and vendedor_id_str != 'todos':
             vendas_filtradas_para_totais = vendas_do_mes.filter(vendedor_id=vendedor_id_str)
-        total_produtos_vendidos = ItemVenda.objects.filter(venda__in=vendas_filtradas_para_totais).aggregate(total=Coalesce(Sum('quantidade'), 0, output_field=IntegerField()))['total']
-        ranking_produtos = ItemVenda.objects.filter(venda__in=vendas_do_mes).values('produto__nome').annotate(total_vendido=Sum('quantidade')).order_by('-total_vendido')
+        total_produtos_vendidos = ItemVenda.objects.filter(venda__in=vendas_filtradas_para_totais).aggregate(
+            total=Coalesce(Sum('quantidade'), 0, output_field=IntegerField()))['total']
+        ranking_produtos = ItemVenda.objects.filter(venda__in=vendas_do_mes).values('produto__nome').annotate(
+            total_vendido=Sum('quantidade')).order_by('-total_vendido')
         ranking_vendedores_data = []
         funcionarios_para_ranking = ['gabrielfk', 'thais', 'joao']
         for username in funcionarios_para_ranking:
             try:
                 vendedor = User.objects.get(username=username)
-                total_vendido = vendas_do_mes.filter(vendedor=vendedor).aggregate(total=Coalesce(Sum('total'), 0, output_field=DecimalField()))['total']
+                total_vendido = vendas_do_mes.filter(vendedor=vendedor).aggregate(
+                    total=Coalesce(Sum('total'), 0, output_field=DecimalField()))['total']
                 ranking_vendedores_data.append({'vendedor__username': username, 'valor_total_vendido': total_vendido})
             except User.DoesNotExist:
                 ranking_vendedores_data.append({'vendedor__username': username, 'valor_total_vendido': 0})
@@ -230,6 +268,7 @@ class DashboardAdminAPIView(APIView):
 
 class DashboardFuncionarioAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+
     def get(self, request, *args, **kwargs):
         funcionario = request.user
         data_str = request.query_params.get('data')
@@ -245,15 +284,32 @@ class DashboardFuncionarioAPIView(APIView):
                 vendas_do_periodo = vendas_do_periodo.filter(data_venda__gte=caixa_aberto.data_abertura)
             except Caixa.DoesNotExist:
                 vendas_do_periodo = Venda.objects.none()
-        total_vendido = vendas_do_periodo.aggregate(total=Coalesce(Sum('total'), 0, output_field=DecimalField()))['total']
+        total_vendido = vendas_do_periodo.aggregate(total=Coalesce(Sum('total'), 0, output_field=DecimalField()))[
+            'total']
         itens_vendidos = ItemVenda.objects.filter(venda__in=vendas_do_periodo)
-        produtos_vendidos = itens_vendidos.aggregate(total=Coalesce(Sum('quantidade'), 0, output_field=IntegerField()))['total']
-        data = { 'totalVendidoTurno': total_vendido, 'produtosVendidosTurno': produtos_vendidos, }
+        produtos_vendidos = itens_vendidos.aggregate(total=Coalesce(Sum('quantidade'), 0, output_field=IntegerField()))[
+            'total']
+        data = {'totalVendidoTurno': total_vendido, 'produtosVendidosTurno': produtos_vendidos, }
         return Response(data)
 
 
 class CurrentUserView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+
     def get(self, request):
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
+
+class ConfiguracoesView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+    def get(self, request, *args, **kwargs):
+        config, created = Configuracoes.objects.get_or_create(id_fixo=1)
+        serializer = ConfiguracoesSerializer(config)
+        return Response(serializer.data)
+    def put(self, request, *args, **kwargs):
+        config, created = Configuracoes.objects.get_or_create(id_fixo=1)
+        serializer = ConfiguracoesSerializer(config, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

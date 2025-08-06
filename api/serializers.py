@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Produto, Venda, ItemVenda, Caixa
+from .models import Produto, Venda, ItemVenda, Caixa, Configuracoes # Importa TUDO
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
@@ -24,7 +24,7 @@ class VendaSerializer(serializers.ModelSerializer):
         model = Venda
         fields = [
             'id', 'caixa', 'vendedor', 'data_venda', 'total',
-            'metodo_pagamento', 'tipo_cartao', 'bandeira_cartao', 'nsu', # <-- CAMPO NOVO AQUI
+            'metodo_pagamento', 'tipo_cartao', 'bandeira_cartao', 'nsu',
             'codigo_autorizacao', 'foto_notinha', 'observacoes',
             'itens'
         ]
@@ -80,3 +80,21 @@ class CaixaUpdateSerializer(serializers.ModelSerializer):
             'dinheiro_sistema_ajustado', 'credito_sistema_ajustado',
             'debito_sistema_ajustado', 'pix_sistema_ajustado'
         ]
+
+class UserCreateSerializer(serializers.ModelSerializer):
+    role = serializers.ChoiceField(choices=[('ADMIN', 'Admin'), ('USER', 'User')], write_only=True)
+    class Meta:
+        model = User
+        fields = ('username', 'password', 'first_name', 'last_name', 'email', 'role')
+        extra_kwargs = {'password': {'write_only': True}}
+
+    def create(self, validated_data):
+        role = validated_data.pop('role')
+        is_staff = (role == 'ADMIN')
+        user = User.objects.create_user(is_staff=is_staff, **validated_data)
+        return user
+
+class ConfiguracoesSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Configuracoes
+        fields = '__all__'

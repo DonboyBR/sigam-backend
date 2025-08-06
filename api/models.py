@@ -18,20 +18,16 @@ class Caixa(models.Model):
     data_abertura = models.DateTimeField(auto_now_add=True)
     data_fechamento = models.DateTimeField(null=True, blank=True)
     valor_abertura = models.DecimalField(max_digits=10, decimal_places=2)
-
     dinheiro_apurado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     credito_apurado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     debito_apurado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     pix_apurado = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     valor_fechamento_apurado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-
     valor_fechamento_sistema = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-
     dinheiro_sistema_ajustado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     credito_sistema_ajustado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     debito_sistema_ajustado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     pix_sistema_ajustado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='ABERTO')
     anexo_filipeta = models.ImageField(upload_to='filipetas/', blank=True, null=True)
 
@@ -44,12 +40,10 @@ class Venda(models.Model):
     TIPO_CARTAO_CHOICES = [('Debito', 'Débito'), ('Credito', 'Crédito'), ]
     BANDEIRA_CARTAO_CHOICES = [('ELO', 'Elo'), ('VISA', 'Visa'), ('MASTERCARD', 'Mastercard'), ('AMEX', 'Amex'),
                                ('OUTRO', 'Outro'), ]
-
     caixa = models.ForeignKey(Caixa, on_delete=models.SET_NULL, null=True, blank=True, related_name='vendas')
     vendedor = models.ForeignKey(User, on_delete=models.PROTECT, null=True)
     data_venda = models.DateTimeField(auto_now_add=True)
     total = models.DecimalField(max_digits=10, decimal_places=2)
-
     metodo_pagamento = models.CharField(max_length=20, choices=METODO_PAGAMENTO_CHOICES)
     tipo_cartao = models.CharField(max_length=10, choices=TIPO_CARTAO_CHOICES, null=True, blank=True)
     bandeira_cartao = models.CharField(max_length=20, choices=BANDEIRA_CARTAO_CHOICES, null=True, blank=True)
@@ -69,3 +63,20 @@ class ItemVenda(models.Model):
     preco_unitario = models.DecimalField(max_digits=10, decimal_places=2)
 
     def __str__(self): return f"{self.quantidade}x {self.produto.nome}"
+
+class Configuracoes(models.Model):
+    id_fixo = models.IntegerField(primary_key=True, default=1, editable=False)
+    unidade = models.CharField(max_length=100, default="Unidade Centro")
+    cnpj = models.CharField(max_length=20, default="12.345.678/0001-90")
+    endereco = models.CharField(max_length=255, default="Rua das Flores, 123")
+    telefone = models.CharField(max_length=20, default="(11) 99999-9999")
+    email = models.EmailField(default="contato@skyfit.com")
+    gympass = models.CharField(max_length=100, default="senha123", verbose_name="Senha Gympass")
+    radioSenha = models.CharField(max_length=100, default="senha456", verbose_name="Senha Rádio")
+    instagram = models.URLField(default="https://instagram.com/skyfit")
+
+    def __str__(self):
+        return f"Configurações da Empresa ({self.unidade})"
+
+    class Meta:
+        verbose_name_plural = "Configurações"

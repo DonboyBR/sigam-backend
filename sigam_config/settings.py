@@ -115,9 +115,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5181",
     "http://localhost:5175",
     "http://localhost:5174",
-    'http://localhost:5180'
-    # Adicione aqui domínios de produção, ex:
-    # "https://seusistema.com.br"
+    "http://localhost:5180",
+    "http://localhost:5182"
 ]
 
 CORS_ALLOW_CREDENTIALS = True
